@@ -4,7 +4,7 @@ import pandas as pd
 import glob
 import openpyxl
 from datetime import datetime
-import pprint
+import os
 from interface_app import send_notification
 
 class Report: 
@@ -144,6 +144,12 @@ class Analysis:
         if not self._running_flag:  # Verificar si se debe detener el análisis
             return "Process canceled"
         
+         # Crear la carpeta 'analysis' si no existe
+        output_folder = "analysis"
+        if not os.path.exists(output_folder):
+            os.makedirs(output_folder)  # Crea la carpeta y subcarpetas si no existen
+
+            
         try:
             wb = openpyxl.load_workbook(template_filename, keep_vba=True, rich_text = True)
         except FileNotFoundError:
