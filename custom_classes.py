@@ -9,6 +9,7 @@ from interface_app import send_notification
 
 class Report: 
     def __init__(self, quotation_number: str, client: str, electronic_mail: list, service_description:str, sending_date:str, ammount_value:float):
+        self.__errors = []
         self.quotation_number = self.format_quotation_number(quotation_number)
         self.client = client
         self.electronic_mail = self.format_electronic_mail(electronic_mail)
@@ -30,9 +31,9 @@ class Report:
                 electronic_mail = [item.strip() for item in electronic_mail]
                 return electronic_mail
             else:
-                raise ValueError("Separator not found (/), email may not be in the correct cell")
+                self.__errors.append("Separator not found (/), email may not be in the correct cell")
         else:
-            raise ValueError("Wrong value,, you need to use a string")
+            self.__errors.append("Wrong value, you need to use a string")
 
     def format_sending_date(self, sending_date):
         months_list = [
@@ -45,12 +46,13 @@ class Report:
         match = re.match(pattern, sending_date, re.IGNORECASE)
 
         if not match:
-            raise ValueError("Bad formatted date. Ensure the input matches the expected format: 'Location, a DD de Month del YYYY'.")
+            self.__errors.append("Bad formatted date. Ensure the input matches the expected format: 'Location, a DD de Month del YYYY'")
 
         location, day, month, year = match.groups()
 
         if month.lower() not in [x for x in months_list]:
-            raise ValueError("Not valid month")
+            # raise ValueError("Not valid month for date")
+            self.__errors.append("Not valid month for date")
 
         sending_date = f"{location}, {day}/{month.capitalize()}/{year}"
 
@@ -60,12 +62,13 @@ class Report:
         if self.ammount_value and self.estimate_service_cost:
             self.estimate_utility_margin = self.ammount_value - self.estimate_service_cost
         else:
-            raise ValueError("No value for import value or estimate_service_cost")
+            self.__err("No value for import value or estimate_service_cost")
 
     def set_estimate_service_cost(self, subtotal_sum:list):
 
         if isinstance(subtotal_sum, list) == False:
-            raise ValueError("Invalid subtotal_sum value, it must be a list!")
+            # raise ValueError("Invalid subtotal_sum value, it must be a list!")
+            self.__errors.append("Invalid subtotal_sum value, it must be a list!")
 
         self.estimate_service_cost = sum(subtotal_sum)
 
@@ -80,6 +83,9 @@ class Report:
             "estimate_service_cost": self.estimate_service_cost if self.estimate_service_cost!= False else "Vacio",
             "estimate_utility_margin" : self.estimate_utility_margin if self.estimate_utility_margin != False else "Vacio"
         }
+    
+    def return_errors(self):
+        return self.__errors
     
 
 class Analysis:
@@ -98,6 +104,8 @@ class Analysis:
 
             if not self._running_flag:  # Verificar si se debe detener el análisis
                 return reports, "Process canceled"
+            
+            send_notification(f"Analysing {file}...")
             
             content = pd.read_excel(file, sheet_name="Cotizacion", index_col=None, header = None)
 
@@ -135,9 +143,13 @@ class Analysis:
             new_report.set_estimate_utility_margin()
 
             send_notification(new_report.to_dict())
+            if new_report.return_errors() != []:
+                send_notification(f"❌ Errors in file: {file}")
+                for x in new_report.return_errors():
+                    send_notification(x)
 
             reports.append(new_report)
-        send_notification("Reports gathered")
+        send_notification(f"{len(reports)} new reports gathered")
         return reports
 
     async def write_reports(self, reports:list[Report], template_filename:str):
@@ -153,7 +165,8 @@ class Analysis:
         try:
             wb = openpyxl.load_workbook(template_filename, keep_vba=True, rich_text = True)
         except FileNotFoundError:
-            raise ValueError(f"Error: The file '{template_filename}' was not found. Please ensure the path is correct.")
+            # raise ValueError(f"Error: The file '{template_filename}' was not found. Please ensure the path is correct.")
+            self.__errors.append(f"Error: The file '{template_filename}' was not found. Please ensure the path is correct.")
         
         page = wb.sheetnames[0]
         ws = wb[page]

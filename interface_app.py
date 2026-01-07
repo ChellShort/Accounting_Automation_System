@@ -95,7 +95,7 @@ class App:
     def poll_notifications(self):
         while not notification_queue.empty():  # Mientras la cola no este vacia, 
             msg = notification_queue.get() # Se seguiran sacando elementos de la cola
-            self.listbox.insert(0, msg) # y se insertaran dentro del listbox
+            self.listbox.insert(tk.END, msg) # y se insertaran dentro del listbox
 
         self.root.after(100, self.poll_notifications) # esto hace que la funcion se repita cada 100 ms
     
