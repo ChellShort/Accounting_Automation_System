@@ -5,6 +5,7 @@ import time
 import tkinter as tk
 from tkinter import filedialog
 import asyncio
+import glob
 
 # Hacemos una cola de notificaciones
 notification_queue = Queue() # Cola de notificaciones infinita
@@ -29,7 +30,7 @@ class App:
         self.btn_select_reports_directory = tk.Button(
             self.button_frame_1,
             text="Select Reports Directory",
-            command=self.select_directory,
+            command=self.select_reports_directory,
             width=20
         )
         self.report_directory = tk.Label(
@@ -41,7 +42,7 @@ class App:
         self.btn_select_template = tk.Button(
             self.button_frame_2,
             text = "Select Template",
-            command= self.select_file,
+            command= self.select_template_directory,
             width= 20
         )
         self.template_directory = tk.Label(
@@ -66,7 +67,7 @@ class App:
         scrollbar.pack(side="right", fill="y")
         scrollbar2 = tk.Scrollbar(self.listbox_frame, orient="horizontal")
         scrollbar2.pack(side="bottom", fill="x")
-        self.listbox = tk.Listbox(self.listbox_frame, xscrollcommand=scrollbar2.set, yscrollcommand=scrollbar.set, width=200)
+        self.listbox = tk.Listbox(self.listbox_frame, xscrollcommand=scrollbar2.set, yscrollcommand=scrollbar.set, width=200, height=300)
 
         self.button_frame_1.pack(pady=20)
         self.button_frame_2.pack(pady=20)
@@ -103,24 +104,50 @@ class App:
         if self.report_directory.cget("text") != "No directory selected" and self.template_directory.cget("text") != "No template selected":
             self.btn_cancel.config(state="normal")
             self.btn_start.config(state="normal")
+        else:
+            self.btn_cancel.config(state="disabled")
+            self.btn_start.config(state="disabled")
         return None
 
     def select_directory(self):
-        folder_selected = filedialog.askdirectory()
-        if folder_selected:
-            self.report_directory.config(text=folder_selected)
-            self.check_enable_btns()
+        return filedialog.askdirectory()
+        
 
     def select_file(self):
-        file_selected = filedialog.askopenfile()
-        if file_selected:
+        return filedialog.askopenfile()
+
+
+    """
+    If there's not at least one file with extension .xslx inside of the folder the button will not count for enabling the start and cancel button
+    """
+    def select_reports_directory(self):
+        folder_selected = self.select_directory()
+        files = glob.glob(f"{folder_selected}/*.xlsx")
+        if len(files) or len(files):
+            self.report_directory.config(text=folder_selected)
+            self.check_enable_btns()
+            send_notification(f"""{len(files)} excel files with extension ".xlsx" found inside of reports directory, using those for the analysis""")
+        else:
+            self.report_directory.config(text="No directory selected")
+            self.check_enable_btns()
+            send_notification(f"""No files with extension ".xslx" were found inside of the directory, please select a folder that has excel files""")
+
+    def select_template_directory(self):
+        file_selected = self.select_file()
+        print(file_selected.name.endswith(".xlsm"))
+        if file_selected.name.endswith(".xlsm") == True:
             self.template_directory.config(text=file_selected.name)
             self.check_enable_btns()
+            send_notification(f"""Template selected: {file_selected.name}""")
+        else:
+            self.template_directory.config(text="No template selected")
+            self.check_enable_btns()
+            send_notification(f"""No files with extension ".xlsm" selected""")
 
     def start_process(self):
         if not self.main_thread or not self.main_thread.is_alive():
             self._running = True
-            send_notification("Process started.")
+            send_notification("🚀 Process started.")
             self.main_thread = threading.Thread(target= self.background_task, daemon=True)
             self.btn_cancel.config(state="normal")
             self.main_thread.start()
@@ -132,14 +159,13 @@ class App:
         if self.main_thread and self.main_thread.is_alive():
             self._running = False
             self.new_analysis.stop_analysis()
-            send_notification("Process canceled")
+            send_notification("🛑 Process canceled")
         else:
             send_notification("No process is running to cancel")
         return None
 
     def background_task(self):
         while self._running == True:
-            time.sleep(2)
             if not self._running:  # Check if the process was canceled
                 break
             asyncio.run(self.new_analysis.start_analysis(folder_route=self.report_directory.cget("text"), template_filename=self.template_directory.cget("text")))

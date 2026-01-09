@@ -1,5 +1,3 @@
-import re
-from queue import Queue
 import pandas as pd
 import glob
 import openpyxl
@@ -7,72 +5,100 @@ from datetime import datetime
 import os
 from interface_app import send_notification
 
+
+"""
+Class for every report that is created.
+Contains the necessary methods to format the elements of the report
+"""
 class Report: 
     def __init__(self, quotation_number: str, client: str, electronic_mail: list, service_description:str, sending_date:str, ammount_value:float):
         self.__errors = []
-        self.quotation_number = self.format_quotation_number(quotation_number)
-        self.client = client
-        self.electronic_mail = self.format_electronic_mail(electronic_mail)
+        if quotation_number != None:
+            self.quotation_number = quotation_number
+        else:
+            self.__errors.append("- Error finding quotation number")
+            self.quotation_number= "Numero de cotización no encontrado"
+
+        if client != None:
+            self.client = client
+        else:
+            self.__errors.append("- Error finding the quotation client")
+            self.client= "Cliente no encontrado"
+
+        if electronic_mail != None:
+            self.electronic_mail = electronic_mail
+        else:
+            self.__errors.append("- Error finding the email and contact")
+            self.electronic_mail= "Email y contacto no encontrado"
+
         self.service_description = service_description
-        self.sending_date = self.format_sending_date(sending_date)
-        self.ammount_value = ammount_value
+
+        if sending_date != None:
+            self.sending_date = sending_date
+        else:
+            self.__errors.append("- Error finding the sending date")
+            self.sending_date = "Fecha de envio no encontrada"
+
+        if ammount_value != None:
+            self.ammount_value = ammount_value
+        else:
+            self.__errors.append("- Error finding the ammount value")
+            self.ammount_value = "Importe no encontrado"
+
         self.estimate_service_cost = False
         self.estimate_utility_margin = False
+    
+    # def format_electronic_mail(self, electronic_mail:str):
+    #     """
+    #     According to a separator, it divides the name of the person to contact and it's email.
 
-    def format_quotation_number(self, quotation_number:str):
-        quotation_number = quotation_number.split("COT.")
-        quotation_number = quotation_number[1].strip()
-        return quotation_number
+    #     For example:
+    #         "John Doe Smith / example@outlook.com"
+    #         Output: [John Doe Smith, example@outlook.com]
+    #     """
 
-    def format_electronic_mail(self, electronic_mail:str):
-        if isinstance(electronic_mail, str):
-            electronic_mail = electronic_mail.split("/")
-            if len(electronic_mail) != 1:
-                electronic_mail = [item.strip() for item in electronic_mail]
-                return electronic_mail
-            else:
-                self.__errors.append("Separator not found (/), email may not be in the correct cell")
-        else:
-            self.__errors.append("Wrong value, you need to use a string")
+    #     if isinstance(electronic_mail, str):
+    #         electronic_mail = electronic_mail.split()
+    #         mails_found = []
+    #         names_found = []
+    #         for x in electronic_mail:
+    #             if "@" in x and x.isalnum() == False:
+    #                 print("Email found")
+    #                 mails_found.append(x)
 
-    def format_sending_date(self, sending_date):
-        months_list = [
-        "enero", "febrero", "marzo", "abril", "mayo", "junio",
-        "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"
-        ]
-        sending_date = sending_date.strip()
-
-        pattern = r"^(.*?),\s+a\s+(\d+)\s+de\s+(\w+)\s+del\s+(\d+)$"
-        match = re.match(pattern, sending_date, re.IGNORECASE)
-
-        if not match:
-            self.__errors.append("Bad formatted date. Ensure the input matches the expected format: 'Location, a DD de Month del YYYY'")
-
-        location, day, month, year = match.groups()
-
-        if month.lower() not in [x for x in months_list]:
-            # raise ValueError("Not valid month for date")
-            self.__errors.append("Not valid month for date")
-
-        sending_date = f"{location}, {day}/{month.capitalize()}/{year}"
-
-        return sending_date
-
-    def set_estimate_utility_margin(self):
-        if self.ammount_value and self.estimate_service_cost:
-            self.estimate_utility_margin = self.ammount_value - self.estimate_service_cost
-        else:
-            self.__err("No value for import value or estimate_service_cost")
+    #     if isinstance(electronic_mail, str):
+    #         electronic_mail = electronic_mail.split("/")
+    #         if len(electronic_mail) != 1:
+    #             electronic_mail = [item.strip() for item in electronic_mail]
+    #             return electronic_mail
+    #         else:
+    #             self.__errors.append("Separator not found (/), email may not be in the correct cell")
+    #     else:
+    #         self.__errors.append("Wrong value, you need to use a string")
 
     def set_estimate_service_cost(self, subtotal_sum:list):
-
+        """
+        According to a list of subvalues extracted from the excel file, we calculate the estimate_service_cost
+        """
         if isinstance(subtotal_sum, list) == False:
             # raise ValueError("Invalid subtotal_sum value, it must be a list!")
             self.__errors.append("Invalid subtotal_sum value, it must be a list!")
 
         self.estimate_service_cost = sum(subtotal_sum)
+    
+    def set_estimate_utility_margin(self):
+        """
+        According to the ammount value of the report and the calculated estimate_service_cost we can calculate the estimate_utility_margin
+        """
+        if self.ammount_value and self.estimate_service_cost:
+            self.estimate_utility_margin = self.ammount_value - self.estimate_service_cost
+        else:
+            self.__err("No value for import value or estimate_service_cost")    
 
     def to_dict(self):
+        """
+        We transform the Report info into a comprehensible dict
+        """
         return {
             "quotation_number": self.quotation_number,
             "client" : self.client,
@@ -92,11 +118,166 @@ class Analysis:
 
     def __init__(self):
         self._running_flag = False
+
+    def format_quotation_number(self, content:pd.DataFrame):
+        """Buscar COT. dentro del archivo en lugar de una celda especifica"""
+        # Check if the substring exists in the dataframe column
+        quotation_number_sample=content[[4]]
+        matches = quotation_number_sample[quotation_number_sample[4].str.contains("COT.", na=False, case=False)]
+        # If matches are found, you can process them
+        if not matches.empty:
+            x = matches.index.to_list()
+            cot_row=x[0]
+            quotation_number = str(content.iloc[cot_row,4])
+            quotation_number = quotation_number.split("COT.")
+            quotation_number = quotation_number[1].strip()
+        else:
+            quotation_number = None # Si es que no se encuentra el numero debemos de mandar una alerta
+        return quotation_number, cot_row
     
-    async def stop_analysis(self):
-        self._running_flag = False
+    #Test later
+    def run_empty_mapping(self, content:pd.DataFrame):
+        is_string = content.apply(lambda x: isinstance(x, str))
+
+        # Identify the start of a range of strings (where a string follows a non-string)
+        starts = is_string & ~is_string.shift(fill_value=False)
+        # Identify the end of a range of strings (where a string is followed by a non-string)
+        ends = is_string & ~is_string.shift(-1, fill_value=False)
+
+        start_indices = content.index[starts]
+        end_indices = content.index[ends]
+        ranges = list(zip(start_indices, end_indices))
+        return ranges
+    
+    """
+    Nota:
+    Podemos ahorrar lineas de codigo si utilizamos el mismo mapeado de valores vacios en las 
+    funciones format_client_email y format_service_description 
+    """
+    def format_client_email(self, content:pd.DataFrame):
+        """
+            Para encontrar el cliente dentro del archivo, primero tenemos que encontrar la primera instancia de texto despues de las 8 lineas
+            Esto contendra el cliente y el correo electronico:
+
+            i.e:
+            Ing. Lemuel Cruz Nieto	
+            Supervisor de proyectos 	
+            TRACSA ENERGIA				
+
+            La ultima linea antes de un nan siempre sera el client, por lo que 
+            lo demas se puede juntar y tratar como texto en busqueda de correos electronicos
+            """
+        client_email_sample = content[[0]]
+        is_string = content[0].apply(lambda x: isinstance(x, str))
+
+        # Identify the start of a range of strings (where a string follows a non-string)
+        starts = is_string & ~is_string.shift(fill_value=False)
+        # Identify the end of a range of strings (where a string is followed by a non-string)
+        ends = is_string & ~is_string.shift(-1, fill_value=False)
+
+        start_indices = client_email_sample.index[starts]
+        end_indices = client_email_sample.index[ends]
+        ranges = list(zip(start_indices, end_indices))
+
+        first_range = ranges[0]
+
+        if len(range(first_range[0], first_range[1])) > 0:
+            """Si es que el rango comprende más de una fila, entonces en efecto contiene client y email.
+            De otro modo, solo contiene uno de los dos"""
+            client = str(content.iloc[first_range[1],0])
+            
+            email_range = range(first_range[0], first_range[1])
+
+            email_content = ""
+            for x in email_range:
+                email_content = email_content + f"{str(content.iloc[x,0])}\n"
+
+            if "@" not in email_content:
+                send_notification("⚠️ No email found in the contact information of the report")
+
+            return client, email_content
+        else:
+            client = str(content.iloc[first_range[1],0])
+            if "@" in client:
+                send_notification("⚠️ Use one separated row for the email and contact information in the report")
+            else:
+                send_notification("⚠️ No email or contact information found in the report")
+            return client, None
+
+    def format_service_description(self, content:pd.DataFrame):
+        """
+        Para ecnontrar la descripcion del servicio, necesitamos encontrar la tabla primero, ya que justo encima se encontrara la descripcion.
+        La tabla la podemos identificar facilmente, debido a que empieza con "No.".
+
+        i.e:
+        Atendiendo a su amable solicitud, le presentamos a su consideración el presupuesto por el servicio de...
+					
+        No.	CONCEPTO	UNIDIDAD	CANTIDAD	 P.U 	IMPORTE
+        1	CHAROLA & SOPORTERIA - CHAROLA TIPO NEMA 8C				
+        """
+        service_description_sample = content[[0]]
+        value_to_find = "No."
+        try: 
+            location_of_No = service_description_sample.stack()[service_description_sample.stack() == value_to_find].index.tolist()[0]
+        except:
+            pass
+
+        #Sliccing the sample
+        service_description_sample = service_description_sample.iloc[:location_of_No[0], :]
+        
+        is_string = service_description_sample[0].apply(lambda x: isinstance(x, str))
+
+        # Identify the start of a range of strings (where a string follows a non-string)
+        starts = is_string & ~is_string.shift(fill_value=False)
+        # Identify the end of a range of strings (where a string is followed by a non-string)
+        ends = is_string & ~is_string.shift(-1, fill_value=False)
+
+        start_indices = service_description_sample.index[starts]
+        end_indices = service_description_sample.index[ends]
+        ranges = list(zip(start_indices, end_indices))
+
+        description_row = ranges[-1][0]
+        service_description = str(content.iloc[description_row,0])
+        return service_description
+    
+    def format_ammount_value(self, content: pd.DataFrame):
+        """
+        Necesitamos encontrar la fila que contiene el texto subtotal dentro de la columna 4, despues de eso tomar el valor que esta a la derecha
+        """
+        new_content = content[[4]].copy()  # Create a copy to avoid the warning
+        new_content.loc[:, 4] = new_content[4].str.strip()  # Use .loc to modify the column explicitly
+        value_to_find = "subtotal:"
+        location = new_content.stack()[new_content.stack().str.contains(value_to_find, na=False, case=False)].index.tolist()
+        if location != []:
+            ammount_value = content.iloc[location[0][0], location[0][1] + 1]
+        else:
+            ammount_value = None
+            send_notification("ammount value not found in report")
+        return ammount_value
+    
+    def format_sending_date(self, content: pd.DataFrame, cot_row):
+        """
+        La fecha de envio esta arriba de la fila del numero de cotizacion pero despues de la fila 8 y despues de la columna 0, por lo que
+        hay que buscar en ese rango por cualquier elemento que tenga texto, esa sera nuestra fecha
+        """
+        # where to search? ([8:cot_row], [1:5])
+        search_range = content.iloc[8:cot_row, 1:5]
+        
+        mask = search_range.notna()
+        positions = list(zip(*mask.to_numpy().nonzero()))
+        row, col = positions[0]
+        # Check if any text is found
+        if positions:
+            row, col = positions[0]  # Take the first non-NaN position
+            sending_date = search_range.iat[row, col]
+            return sending_date
+        else:
+            return None
 
     async def gather_reports(self, folder_route:str):
+        """
+        This function gathers all the xlsx files inside of a directory and analyse them to insert the correspondent info into a Report object
+        """
         folder_route = folder_route + r"\*.xlsx"
         reports = []
 
@@ -106,19 +287,19 @@ class Analysis:
                 return reports, "Process canceled"
             
             send_notification(f"Analysing {file}...")
+            content = pd.read_excel(file, sheet_name=0, index_col=None, header = None)
             
-            content = pd.read_excel(file, sheet_name="Cotizacion", index_col=None, header = None)
+            quotation_number, cot_row = self.format_quotation_number(content)
 
-            quotation_number = str(content.iloc[13,4])
-            client = str(content.iloc[11,0])
+            """Por el momento esta funcion solo traera el cliente y correo, aunque tambien se puede modificar para obtener la descripcion del servicio, pero requeriria seguir un formato epsecial"""
+            client, electronic_mail = self.format_client_email(content)
             
-            electronic_mail = str(content.iloc[10,0]).strip()
+            service_description = self.format_service_description(content)
+            # service_description = str(content.iloc[15,0])
             
-            service_description = str(content.iloc[15,0])
+            sending_date = self.format_sending_date(content, cot_row)
             
-            sending_date = str(content.iloc[9,2])
-            
-            ammount_value = float(content.iloc[18,5])
+            ammount_value = self.format_ammount_value(content)
             
             new_report = Report(quotation_number, client, electronic_mail, service_description, sending_date, ammount_value)
 
@@ -134,10 +315,14 @@ class Analysis:
 
                 # Find the location(s)
                 df = pd.DataFrame(sheet_data)
-                locations = df.stack()[df.stack() == value_to_find].index.tolist()[0]
-                # df.stack() ....  [df.stack() == value_to_find (Aqui es donde buscamos el valor en especifico) ].index.tolist() (lo convertimos a lista los resultados de busqueda)
-                # print(f"Value '{value_to_find}' found at location(s): {locations[0]} {locations[1]}")
-                subtotals.append(float(sheet_data.iloc[locations[0], 2]))
+                try:
+                    locations = df.stack()[df.stack() == value_to_find].index.tolist()[0]
+                    # df.stack() ....  [df.stack() == value_to_find (Aqui es donde buscamos el valor en especifico) ].index.tolist() (lo convertimos a lista los resultados de busqueda)
+                    # print(f"Value '{value_to_find}' found at location(s): {locations[0]} {locations[1]}")
+                    if sheet_data.iloc[locations[0], 2] != "":
+                        subtotals.append(float(sheet_data.iloc[locations[0], 2]))
+                except:
+                    pass
 
             new_report.set_estimate_service_cost(subtotals)
             new_report.set_estimate_utility_margin()
@@ -161,12 +346,7 @@ class Analysis:
         if not os.path.exists(output_folder):
             os.makedirs(output_folder)  # Crea la carpeta y subcarpetas si no existen
 
-            
-        try:
-            wb = openpyxl.load_workbook(template_filename, keep_vba=True, rich_text = True)
-        except FileNotFoundError:
-            # raise ValueError(f"Error: The file '{template_filename}' was not found. Please ensure the path is correct.")
-            self.__errors.append(f"Error: The file '{template_filename}' was not found. Please ensure the path is correct.")
+        wb = openpyxl.load_workbook(template_filename, keep_vba=True, rich_text = True)
         
         page = wb.sheetnames[0]
         ws = wb[page]
@@ -212,4 +392,7 @@ class Analysis:
             reports= await self.gather_reports(folder_route)
             await self.write_reports(reports, template_filename)
         except PermissionError:
-            print("Before executing the script, close the quotation control file")
+            send_notification("⚠️⚠️⚠️ Before executing the script, close the quotation control file and the reports that are opened")
+
+    async def stop_analysis(self):
+            self._running_flag = False
