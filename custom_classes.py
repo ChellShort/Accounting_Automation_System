@@ -4,7 +4,7 @@ import openpyxl
 from datetime import datetime
 import os
 from interface_app import send_notification
-
+from multiprocessing import Process
 
 """
 Class for every report that is created.
@@ -274,6 +274,30 @@ class Analysis:
         else:
             return None
 
+    def format_extra_costs(self, file):
+        # Leemos las hojas de materiales y de mano de obra
+        subtotals=[]
+        total_sheets = pd.ExcelFile(file).sheet_names
+        total_sheets.pop(0)
+        send_notification("")
+
+        for i in total_sheets:
+            sheet_data = pd.read_excel(file, sheet_name=i, index_col=None, header=None, usecols=[5, 6, 7])
+
+            value_to_find = "Subtotal 2"
+
+            # Find the location(s)
+            df = pd.DataFrame(sheet_data)
+            try:
+                locations = df.stack()[df.stack() == value_to_find].index.tolist()[0]
+                # df.stack() ....  [df.stack() == value_to_find (Aqui es donde buscamos el valor en especifico) ].index.tolist() (lo convertimos a lista los resultados de busqueda)
+                # print(f"Value '{value_to_find}' found at location(s): {locations[0]} {locations[1]}")
+                if sheet_data.iloc[locations[0], 2] != "":
+                    subtotals.append(float(sheet_data.iloc[locations[0], 2]))
+            except:
+                send_notification(f"⚠️ Subtotal not found in sheet {i}")
+        return subtotals
+
     async def gather_reports(self, folder_route:str):
         """
         This function gathers all the xlsx files inside of a directory and analyse them to insert the correspondent info into a Report object
@@ -289,6 +313,8 @@ class Analysis:
             send_notification(f"Analysing {file}...")
             content = pd.read_excel(file, sheet_name=0, index_col=None, header = None)
             
+            p = Process(target=self.format_quotation_number, args=(content))
+            p.start()
             quotation_number, cot_row = self.format_quotation_number(content)
 
             """Por el momento esta funcion solo traera el cliente y correo, aunque tambien se puede modificar para obtener la descripcion del servicio, pero requeriria seguir un formato epsecial"""
@@ -302,27 +328,7 @@ class Analysis:
             ammount_value = self.format_ammount_value(content)
             
             new_report = Report(quotation_number, client, electronic_mail, service_description, sending_date, ammount_value)
-
-            # Leemos las hojas de materiales y de mano de obra
-
-            total_sheets = len(pd.ExcelFile(file).sheet_names)
-            subtotals=[]
-
-            for i in range(1, total_sheets):
-                sheet_data = pd.read_excel(file, sheet_name=i, index_col=None, header=None, usecols=[5, 6, 7])
-
-                value_to_find = "Subtotal 2"
-
-                # Find the location(s)
-                df = pd.DataFrame(sheet_data)
-                try:
-                    locations = df.stack()[df.stack() == value_to_find].index.tolist()[0]
-                    # df.stack() ....  [df.stack() == value_to_find (Aqui es donde buscamos el valor en especifico) ].index.tolist() (lo convertimos a lista los resultados de busqueda)
-                    # print(f"Value '{value_to_find}' found at location(s): {locations[0]} {locations[1]}")
-                    if sheet_data.iloc[locations[0], 2] != "":
-                        subtotals.append(float(sheet_data.iloc[locations[0], 2]))
-                except:
-                    pass
+            subtotals = self.format_extra_costs()
 
             new_report.set_estimate_service_cost(subtotals)
             new_report.set_estimate_utility_margin()

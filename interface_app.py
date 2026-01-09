@@ -62,6 +62,13 @@ class App:
             text= "Cancel",
             command=self.cancel_process,
             width= 20)
+        
+        self.btn_clear = tk.Button(
+            self.button_frame_3,
+            text="Clear",
+            command= self.clear_notifications,
+            width = 20
+        )
 
         scrollbar = tk.Scrollbar(self.listbox_frame, orient="vertical")
         scrollbar.pack(side="right", fill="y")
@@ -82,8 +89,10 @@ class App:
 
         self.btn_start.pack(side=tk.LEFT, padx=20, expand=True)
         self.btn_cancel.pack(side=tk.LEFT, padx=20, expand=True)
+        self.btn_clear.pack(side=tk.LEFT, padx=20, expand=True)
         self.btn_cancel.config(state="disabled")
         self.btn_start.config(state="disabled")
+        # self.btn_clear.config(state="disabled")
 
         # self.btn_select.pack(pady=20)
         # self.label_path.pack(pady=20)
@@ -99,7 +108,12 @@ class App:
             self.listbox.insert(tk.END, msg) # y se insertaran dentro del listbox
 
         self.root.after(100, self.poll_notifications) # esto hace que la funcion se repita cada 100 ms
-    
+
+    def clear_notifications(self):
+        while not notification_queue.empty():
+            notification_queue.get()
+        self.listbox.delete(0, tk.END)
+
     def check_enable_btns(self):
         if self.report_directory.cget("text") != "No directory selected" and self.template_directory.cget("text") != "No template selected":
             self.btn_cancel.config(state="normal")
@@ -172,4 +186,3 @@ class App:
             break
         self._running = False
         self.btn_cancel.config(state="disabled")
-        send_notification("Background task completed.")
