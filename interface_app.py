@@ -126,10 +126,8 @@ class App:
     def select_directory(self):
         return filedialog.askdirectory()
         
-
     def select_file(self):
         return filedialog.askopenfile()
-
 
     """
     If there's not at least one file with extension .xslx inside of the folder the button will not count for enabling the start and cancel button
@@ -148,7 +146,6 @@ class App:
 
     def select_template_directory(self):
         file_selected = self.select_file()
-        print(file_selected.name.endswith(".xlsm"))
         if file_selected.name.endswith(".xlsm") == True:
             self.template_directory.config(text=file_selected.name)
             self.check_enable_btns()
@@ -172,7 +169,7 @@ class App:
     def cancel_process(self):
         if self.main_thread and self.main_thread.is_alive():
             self._running = False
-            self.new_analysis.stop_analysis()
+            asyncio.run(self.new_analysis.stop_analysis())
             send_notification("🛑 Process canceled")
         else:
             send_notification("No process is running to cancel")
@@ -180,8 +177,6 @@ class App:
 
     def background_task(self):
         while self._running == True:
-            if not self._running:  # Check if the process was canceled
-                break
             asyncio.run(self.new_analysis.start_analysis(folder_route=self.report_directory.cget("text"), template_filename=self.template_directory.cget("text")))
             break
         self._running = False

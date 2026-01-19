@@ -4,7 +4,7 @@ import openpyxl
 from datetime import datetime
 import os
 from interface_app import send_notification
-from multiprocessing import Process
+from multiprocessing import Pool
 
 """
 Class for every report that is created.
@@ -117,7 +117,7 @@ class Report:
 class Analysis:
 
     def __init__(self):
-        self._running_flag = False
+        pass
 
     def format_quotation_number(self, content:pd.DataFrame):
         """Buscar COT. dentro del archivo en lugar de una celda especifica"""
@@ -133,7 +133,8 @@ class Analysis:
             quotation_number = quotation_number[1].strip()
         else:
             quotation_number = None # Si es que no se encuentra el numero debemos de mandar una alerta
-        return quotation_number, cot_row
+            send_notification("⚠️ No se encontro el numero de la cotización")
+        return quotation_number
     
     #Test later
     def run_empty_mapping(self, content:pd.DataFrame):
@@ -190,11 +191,11 @@ class Analysis:
 
             email_content = ""
             for x in email_range:
-                email_content = email_content + f"{str(content.iloc[x,0])}\n"
+                email_content = email_content + f"{str(content.iloc[x,0])}"
 
             if "@" not in email_content:
+                email_content = email_content + "\n(email no especificado)"
                 send_notification("⚠️ No email found in the contact information of the report")
-
             return client, email_content
         else:
             client = str(content.iloc[first_range[1],0])
@@ -236,7 +237,7 @@ class Analysis:
         end_indices = service_description_sample.index[ends]
         ranges = list(zip(start_indices, end_indices))
 
-        description_row = ranges[-1][0]
+        description_row = ranges[-1][1]
         service_description = str(content.iloc[description_row,0])
         return service_description
     
@@ -255,22 +256,23 @@ class Analysis:
             send_notification("ammount value not found in report")
         return ammount_value
     
-    def format_sending_date(self, content: pd.DataFrame, cot_row):
+    def format_sending_date(self, content: pd.DataFrame):
         """
-        La fecha de envio esta arriba de la fila del numero de cotizacion pero despues de la fila 8 y despues de la columna 0, por lo que
-        hay que buscar en ese rango por cualquier elemento que tenga texto, esa sera nuestra fecha
+        La fecha de envio es el primer elemento despues de la fila 8 entre las columnas 1 y 5, por lo que podemos transformar los valores a true or false para saber cual
+        es el que se encuentra primero, esa sera nuestra fecha
         """
-        # where to search? ([8:cot_row], [1:5])
-        search_range = content.iloc[8:cot_row, 1:5]
+        # where to search? ([8:], [1:5])
+        search_range = content.iloc[8:, 1:5]
+
+        search_range = (
+            search_range.stack()              # flatten the dataframe
+            .dropna()             # remove NaN
+            .astype(str)          # ensure string
+        )
+        first_text = search_range.iloc[0]              # take first value
         
-        mask = search_range.notna()
-        positions = list(zip(*mask.to_numpy().nonzero()))
-        row, col = positions[0]
-        # Check if any text is found
-        if positions:
-            row, col = positions[0]  # Take the first non-NaN position
-            sending_date = search_range.iat[row, col]
-            return sending_date
+        if "COT. " not in first_text:
+            return first_text
         else:
             return None
 
@@ -279,7 +281,6 @@ class Analysis:
         subtotals=[]
         total_sheets = pd.ExcelFile(file).sheet_names
         total_sheets.pop(0)
-        send_notification("")
 
         for i in total_sheets:
             sheet_data = pd.read_excel(file, sheet_name=i, index_col=None, header=None, usecols=[5, 6, 7])
@@ -299,53 +300,52 @@ class Analysis:
         return subtotals
 
     async def gather_reports(self, folder_route:str):
-        """
-        This function gathers all the xlsx files inside of a directory and analyse them to insert the correspondent info into a Report object
-        """
         folder_route = folder_route + r"\*.xlsx"
         reports = []
 
         for file in glob.glob(folder_route):
+            
+            if not self._running_flag:
+                break
 
-            if not self._running_flag:  # Verificar si se debe detener el análisis
-                return reports, "Process canceled"
+            new_report = None
             
             send_notification(f"Analysing {file}...")
             content = pd.read_excel(file, sheet_name=0, index_col=None, header = None)
-            
-            p = Process(target=self.format_quotation_number, args=(content))
-            p.start()
-            quotation_number, cot_row = self.format_quotation_number(content)
 
-            """Por el momento esta funcion solo traera el cliente y correo, aunque tambien se puede modificar para obtener la descripcion del servicio, pero requeriria seguir un formato epsecial"""
-            client, electronic_mail = self.format_client_email(content)
-            
-            service_description = self.format_service_description(content)
-            # service_description = str(content.iloc[15,0])
-            
-            sending_date = self.format_sending_date(content, cot_row)
-            
-            ammount_value = self.format_ammount_value(content)
-            
-            new_report = Report(quotation_number, client, electronic_mail, service_description, sending_date, ammount_value)
-            subtotals = self.format_extra_costs()
+            with Pool(processes = 5) as pool:
+                p1 = pool.apply_async(self.format_quotation_number, (content,))
+                p2 = pool.apply_async(self.format_client_email, (content, ))
+                p3 = pool.apply_async(self.format_service_description, (content, ))
+                p4 = pool.apply_async(self.format_sending_date, (content,))
+                p5 = pool.apply_async(self.format_ammount_value, (content, ))
+                
 
-            new_report.set_estimate_service_cost(subtotals)
-            new_report.set_estimate_utility_margin()
+                quotation_number = p1.get()
+                client, electronic_mail = p2.get()
+                service_description = p3.get()
+                sending_date = p4.get()
+                ammount_value = p5.get()
 
-            send_notification(new_report.to_dict())
-            if new_report.return_errors() != []:
-                send_notification(f"❌ Errors in file: {file}")
-                for x in new_report.return_errors():
-                    send_notification(x)
+                new_report = Report(quotation_number, client, electronic_mail, service_description, sending_date, ammount_value)
 
-            reports.append(new_report)
-        send_notification(f"{len(reports)} new reports gathered")
+                subtotals = self.format_extra_costs(file)
+
+                new_report.set_estimate_service_cost(subtotals)
+                new_report.set_estimate_utility_margin()
+
+                send_notification(new_report.to_dict())
+                if new_report.return_errors() != []:
+                    send_notification(f"❌ Errors in file: {file}")
+                    for x in new_report.return_errors():
+                            send_notification(x)
+
+                reports.append(new_report)
+        if self._running_flag:
+            send_notification(f"{len(reports)} new reports gathered")
         return reports
 
     async def write_reports(self, reports:list[Report], template_filename:str):
-        if not self._running_flag:  # Verificar si se debe detener el análisis
-            return "Process canceled"
         
          # Crear la carpeta 'analysis' si no existe
         output_folder = "analysis"
@@ -387,6 +387,8 @@ class Analysis:
             # Move to the next row for the next report
             row_to_insert += 1
 
+        ws.cell(row=3, column=4, value=datetime.today().strftime('%m/%d/%Y'))
+
         output_filename = f'analysis/CONTROL DE COTIZACIONES {str(datetime.today()).replace(":", "_")}.xlsm'
         wb.save(output_filename)
 
@@ -396,9 +398,10 @@ class Analysis:
         self._running_flag = True
         try:
             reports= await self.gather_reports(folder_route)
-            await self.write_reports(reports, template_filename)
+            if self._running_flag:
+                await self.write_reports(reports, template_filename)
         except PermissionError:
             send_notification("⚠️⚠️⚠️ Before executing the script, close the quotation control file and the reports that are opened")
 
     async def stop_analysis(self):
-            self._running_flag = False
+        self._running_flag = False
