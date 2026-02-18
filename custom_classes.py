@@ -80,20 +80,27 @@ class Report:
         """
         According to a list of subvalues extracted from the excel file, we calculate the estimate_service_cost
         """
-        if isinstance(subtotal_sum, list) == False:
-            # raise ValueError("Invalid subtotal_sum value, it must be a list!")
-            self.__errors.append("Invalid subtotal_sum value, it must be a list!")
+        if subtotal_sum == False: # En caso de que detectemos que no hay ningun subvalue, por lo que no se hara ninguna operacion
+            self.estimate_service_cost = "No se pudo calcular el costo estimado de servicio debido a que no se encontraron hojas de materiales"
+        else:    
+            if isinstance(subtotal_sum, list) == False:
+                # raise ValueError("Invalid subtotal_sum value, it must be a list!")
+                self.__errors.append("Invalid subtotal_sum value, it must be a list!")
 
-        self.estimate_service_cost = sum(subtotal_sum)
+            self.estimate_service_cost = sum(subtotal_sum)
     
     def set_estimate_utility_margin(self):
         """
         According to the ammount value of the report and the calculated estimate_service_cost we can calculate the estimate_utility_margin
         """
+        print(f"Ammount value: {self.ammount_value}.Estimate service cost: {self.estimate_service_cost}")
         if self.ammount_value and self.estimate_service_cost:
-            self.estimate_utility_margin = self.ammount_value - self.estimate_service_cost
+            if isinstance(self.estimate_service_cost, str) == False: 
+                self.estimate_utility_margin = self.ammount_value - self.estimate_service_cost
+            else:
+                self.estimate_utility_margin = "No se pudo calcular el margen de utilidad estimado debido a que no existe un costo estimado del servicio"
         else:
-            self.__err("No value for import value or estimate_service_cost")    
+            self.__errors.append("No value for import value or estimate_service_cost")    
 
     def to_dict(self):
         """
@@ -282,22 +289,28 @@ class Analysis:
         total_sheets = pd.ExcelFile(file).sheet_names
         total_sheets.pop(0)
 
-        for i in total_sheets:
-            sheet_data = pd.read_excel(file, sheet_name=i, index_col=None, header=None, usecols=[5, 6, 7])
+        #   Si es que el documento que analizamos no tiene ninguna hoja de materiales, entonces ya no haremos los analisis de cifras
 
-            value_to_find = "Subtotal 2"
+        if total_sheets != []:
+            for i in total_sheets:
+                sheet_data = pd.read_excel(file, sheet_name=i, index_col=None, header=None, usecols=[5, 6, 7])
 
-            # Find the location(s)
-            df = pd.DataFrame(sheet_data)
-            try:
-                locations = df.stack()[df.stack() == value_to_find].index.tolist()[0]
-                # df.stack() ....  [df.stack() == value_to_find (Aqui es donde buscamos el valor en especifico) ].index.tolist() (lo convertimos a lista los resultados de busqueda)
-                # print(f"Value '{value_to_find}' found at location(s): {locations[0]} {locations[1]}")
-                if sheet_data.iloc[locations[0], 2] != "":
-                    subtotals.append(float(sheet_data.iloc[locations[0], 2]))
-            except:
-                send_notification(f"⚠️ Subtotal not found in sheet {i}")
-        return subtotals
+                value_to_find = "Subtotal 2"
+
+                # Find the location(s)
+                df = pd.DataFrame(sheet_data)
+                try:
+                    locations = df.stack()[df.stack() == value_to_find].index.tolist()[0]
+                    # df.stack() ....  [df.stack() == value_to_find (Aqui es donde buscamos el valor en especifico) ].index.tolist() (lo convertimos a lista los resultados de busqueda)
+                    # print(f"Value '{value_to_find}' found at location(s): {locations[0]} {locations[1]}")
+                    if sheet_data.iloc[locations[0], 2] != "":
+                        subtotals.append(float(sheet_data.iloc[locations[0], 2]))
+                except:
+                    send_notification(f"⚠️ Subtotal not found in sheet {i}")
+            return subtotals
+        else:
+            send_notification(f"⚠️ The document doesn't contain any materials sheet, please check the document for missing sheets")
+            return False
 
     async def gather_reports(self, folder_route:str):
         folder_route = folder_route + r"\*.xlsx"
