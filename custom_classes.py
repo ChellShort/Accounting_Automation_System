@@ -5,6 +5,7 @@ from datetime import datetime
 import os
 from interface_app import send_notification
 from multiprocessing import Pool
+import tkinter as tk
 
 """
 Class for every report that is created.
@@ -93,7 +94,6 @@ class Report:
         """
         According to the ammount value of the report and the calculated estimate_service_cost we can calculate the estimate_utility_margin
         """
-        print(f"Ammount value: {self.ammount_value}.Estimate service cost: {self.estimate_service_cost}")
         if self.ammount_value and self.estimate_service_cost:
             if isinstance(self.estimate_service_cost, str) == False: 
                 self.estimate_utility_margin = self.ammount_value - self.estimate_service_cost
@@ -415,6 +415,9 @@ class Analysis:
                 await self.write_reports(reports, template_filename)
         except PermissionError:
             send_notification("⚠️⚠️⚠️ Before executing the script, close the quotation control file and the reports that are opened")
+        except Exception as e:
+            tk.messagebox.showerror("showerror", e) 
+            send_notification("Process stoped")
 
     async def stop_analysis(self):
         self._running_flag = False
